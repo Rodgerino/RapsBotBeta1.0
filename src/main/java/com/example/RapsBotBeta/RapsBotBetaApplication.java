@@ -1,13 +1,13 @@
-package com.example.RapsBotBetaZOV;
+package com.example.RapsBotBeta;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class RapsBotBetaZovApplication {
+public class RapsBotBetaApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(RapsBotBetaZovApplication.class, args);
+		SpringApplication.run(RapsBotBetaApplication.class, args);
 	}
 
 }

@@ -1,10 +1,10 @@
-package com.example.RapsBotBetaZOV;
+package com.example.RapsBotBeta;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class RapsBotBetaZovApplicationTests {
+class RapsBotBetaApplicationTests {
 
 	@Test
 	void contextLoads() {
