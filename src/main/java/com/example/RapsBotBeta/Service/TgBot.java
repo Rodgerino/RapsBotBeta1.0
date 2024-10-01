@@ -6,7 +6,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.methods.send.SendVideo;
+import org.telegram.telegrambots.meta.api.objects.PhotoSize;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.Video;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -19,6 +23,9 @@ import java.util.List;
 
 public class TgBot extends TelegramLongPollingBot {
 
+    private final String creatorChatId = "6790348968"; // Замените на ваш Chat ID
+
+    private boolean awaitingMessage = false;
 
     private static final Logger log = LoggerFactory.getLogger(TgBot.class);
 
@@ -32,52 +39,11 @@ public class TgBot extends TelegramLongPollingBot {
         return "7545317596:AAFZHu0ORjLTp56BNxuuUf9bsGFq7rwnvWE";
     }
 
-    private void sendButtons(String chatId) {
-        // Создание кнопок
-        List<InlineKeyboardButton> row = new ArrayList<>();
-        row.add(InlineKeyboardButton.builder().text("Курс Euro").callbackData("button1").build());
-        row.add(InlineKeyboardButton.builder().text("Курс $").callbackData("button2").build());
 
-        List<List<InlineKeyboardButton>> buttons = new ArrayList<>();
-        buttons.add(row);
-
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup(buttons);
-
-        // Отправка сообщения с кнопками
-        SendMessage message = new SendMessage();
-        message.setChatId(chatId);
-        message.setText("Выбери опцию:");
-        message.setReplyMarkup(markup);
-
-        try {
-            execute(message);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
-        }
-    }
 
 
     @Override
     public void onUpdateReceived(Update update) {
-
-        if (update.hasCallbackQuery()) {
-            String callbackData = update.getCallbackQuery().getData();
-            if (callbackData.equals("button1")) {
-                // Действие для кнопки 1
-                try {
-                    execute(new SendMessage(update.getCallbackQuery().getMessage().getChatId().toString(), "Курс евро: 100 рублей 16 копеек"));
-                } catch (TelegramApiException e) {
-                    throw new RuntimeException(e);
-                }
-            } else if (callbackData.equals("button2")) {
-                // Действие для кнопки 2
-                try {
-                    execute(new SendMessage(update.getCallbackQuery().getMessage().getChatId().toString(), "Курс доллара: 90 рублей 28 копеек"));
-                } catch (TelegramApiException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }
 
 
         if(update.hasMessage() && update.getMessage().hasText()) {
@@ -88,18 +54,79 @@ public class TgBot extends TelegramLongPollingBot {
 
             switch (messageText) {
                 case "/start":
-                    startCommandRecived(chatId, update.getMessage().getChat().getFirstName());
-                    sendButtons(String.valueOf(chatId));
+                    try {
+                        startCommandRecived(chatId, update.getMessage().getChat().getFirstName());
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
                     break;
-                case "/info":
-                    sendButtons(String.valueOf(chatId));
+                case "/sendMessage":
+                    awaitingMessage = true;
+                    sendMessage(chatId, "Отправь то,что бы хотел видеть в канале");
                     break;
-                default: sendMessage(chatId, "Прости, я умею пока немного(",
-                        "Попробуй команду /info!");
+                default:
+                    if (awaitingMessage) {
+                        sendMessage(Long.parseLong(creatorChatId), "Сообщение от пользователя " + chatId + ": " + messageText);
+                        awaitingMessage = false; // Сброс состояния после получения сообщения
+                        sendMessage(chatId, "Сообщение отправлено создателю.");
+                    } else{
+                        sendMessage(chatId, "Неизвестная команда. Используйте /start или /sendMessage.");
+                    }
+                    if (update.getMessage().hasPhoto()) {
+                            handlePhoto(update.getMessage().getPhoto(), chatId);
+                    }else if (update.getMessage().hasVideo()) {
+                    handleVideo(update.getMessage().getVideo(), chatId);
+                }
             }
-
         }
 
+    }
+
+
+
+    private void handlePhoto(List<PhotoSize> photos, long chatId) {
+        if (awaitingMessage) {
+            // Получаем самый большой размер фото
+            PhotoSize photo = photos.stream().max((p1, p2) -> Integer.compare(p1.getFileSize(), p2.getFileSize())).orElse(null);
+            if (photo != null) {
+                sendPhotoToCreator(photo);
+                awaitingMessage = false; // Сброс состояния после получения фото
+                sendMessage(chatId, "Фото отправлено создателю.");
+            }
+        } else {
+            sendMessage(chatId, "Неизвестная команда. Используйте /start или /await.");
+        }
+    }
+
+    private void handleVideo(Video video, long chatId) {
+        if (awaitingMessage) {
+            sendVideoToCreator(video);
+            awaitingMessage = false; // Сброс состояния после получения видео
+            sendMessage(chatId, "Видео отправлено создателю.");
+        } else {
+            sendMessage(chatId, "Неизвестная команда. Используйте /start или /await.");
+        }
+    }
+
+    private void sendVideoToCreator(Video video) {
+        try {
+            SendVideo sendVideo = new SendVideo();
+            sendVideo.setChatId(String.valueOf(creatorChatId));
+            sendVideo.setVideo(video.getFileId()); // Отправляем видео по ID
+            execute(sendVideo);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendPhotoToCreator(PhotoSize photo) {
+        try { SendPhoto sendPhoto = new SendPhoto();
+            sendPhoto.setChatId(String.valueOf(creatorChatId));
+            sendPhoto.setPhoto(photo.getFileId(creatorChatId)); // Отправляем фото по ID
+            execute(sendPhoto);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
     }
 
 
@@ -114,14 +141,16 @@ public class TgBot extends TelegramLongPollingBot {
     }
 
 
-    private void startCommandRecived(long chatId, String name){ //Ответ пользователю
+    private void startCommandRecived(long chatId, String name) throws InterruptedException { //Ответ пользователю
 
         String answer = "Привет,"  + name +", приятно познакомиться!";
-        String answer1 = "Я пока нахожусь на бета-тесте, но могу предложить тебе пару опций";
+        String answer1 = "Я - бот предложка! Я больше ничего не умею кроме как принимать сообщения и отсылать их админу!";
+        Thread.sleep(2000);
+        String answer2 = "Чтобы отослать что-то в предложку, напиши: /sendMessege";
         log.info("Replied to user" + name);
 
 
-        sendMessage(chatId, answer, answer1);
+        sendMessage(chatId, answer, answer1, answer2);
     }
 
     private void sendMessage(long chatId, String textToSend){
@@ -150,6 +179,34 @@ public class TgBot extends TelegramLongPollingBot {
 
 
         message.setText(textToSend2);
+        try{
+            execute(message);
+        } catch (TelegramApiException e) {
+            log.error("Ошбика" + e.getMessage());
+        }
+    }
+
+    private void sendMessage(long chatId, String textToSend, String textToSend2, String textToSend3){
+        SendMessage message = new SendMessage();
+        message.setChatId(String.valueOf(chatId));
+
+
+        message.setText(textToSend);
+        try{
+            execute(message);
+        } catch (TelegramApiException e) {
+            log.error("Ошбика" + e.getMessage());
+        }
+
+
+        message.setText(textToSend2);
+        try{
+            execute(message);
+        } catch (TelegramApiException e) {
+            log.error("Ошбика" + e.getMessage());
+        }
+
+        message.setText(textToSend3);
         try{
             execute(message);
         } catch (TelegramApiException e) {
